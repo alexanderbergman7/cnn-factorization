@@ -15,10 +15,14 @@ import pytorch_prototyping
 from skimage import io
 import os
 
-# hacky method since running in virtual environment on my machine
-#import matplotlib
+# hacky method since running in virtual environment on my machine or X11 forwarding to view images through SSH
+import matplotlib
 #matplotlib.use('TkAgg')
-#import matplotlib.pyplot as plt
+#matplotlib.use('GTK')
+import matplotlib.pyplot as plt
+
+import psutil
+
 
 class Dataset():
 
@@ -54,9 +58,20 @@ class Dataset():
 
 		return images_orig, images_noisy
 
+	def getValidationData(self):
+                images_orig = []
+                images_noisy = []
+                for i in range(0, len(self.val)):
+                        image_original, image_noisy = self.getValItem(i)
+
+                        images_orig.append(image_original)
+                        images_noisy.append(image_noisy)
+
+                return images_orig, images_noisy
+
 # Get 2D UNet model, single channel input, 16 features at top level, output single channel of denoised image
 # params: input channels, output channels, number of top level features, down/up-samples, maximum features, use dropout
-UNet2D = pytorch_prototyping.Unet(1, 1, 8, 2, 512, False)
+UNet2D = pytorch_prototyping.Unet(1, 1, 1, 2, 512, False)
 
 # Define loss function
 criterion = nn.MSELoss()
@@ -70,17 +85,36 @@ trainingDataX = torch.unsqueeze(trainingDataX, 1)
 trainingDataY = torch.stack(trainingDataY, 0)
 trainingDataY = torch.unsqueeze(trainingDataY, 1)
 
-#output = UNet2D(trainingDataX)
-#print(output.size())
-#print(trainingDataY.size())
+optimizer = optim.SGD(UNet2D.parameters(), lr=0.01)
+EPOCHS = 20
+for i in range(0,EPOCHS):
+	optimizer.zero_grad()
+	output = UNet2D(trainingDataX)
 
-#image, image_noisy = d.getTrainItem()
-#plt.imshow(image)
+	loss = criterion(output, trainingDataY)
+	print(loss)
+	loss.backward()
+	optimizer.step()
+
+valDataY, valDataX = d.getValidationData()
+valDataX = torch.stack(valDataX, 0)
+valDataX = torch.unsqueeze(valDataX, 1)
+valDataY = torch.stack(valDataY, 0)
+valDataY = torch.unsqueeze(valDataY, 1)
+
+output = UNet2D(valDataX)
+#plt.imshow(trainingDataX[1,0,:,:].numpy())
+#plt.show()
+#plt.imshow(trainingDataY[1,0,:,:].numpy())
+#plt.show()
+#plt.imshow(output[1,0,:,:].detach().numpy())
 #plt.show()
 
-#output = UNet2D(image2)
+#process = psutil.Process(os.getpid())
+#print(process.memory_info().rss)
 
-loss = criterion(trainingDataX, trainingDataY)
-print(loss)
-#UNet2D.zero_grad()
-#loss.backward()
+f, axarr = plt.subplots(2,2)
+axarr[0,0].imshow(valDataX[1,0,:,:].numpy())
+axarr[0,1].imshow(valDataY[1,0,:,:].numpy())
+axarr[1,0].imshow(output[1,0,:,:].detach().numpy())
+plt.show()
