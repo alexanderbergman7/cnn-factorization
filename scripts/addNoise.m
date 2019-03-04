@@ -10,6 +10,11 @@ for i=1:nvals
    % add noise
    image = image + .1*randn(size(image));
    image = image(1:end-1, 1:end-1);
+
+   % rotate image if it is tall
+   if size(image) == [480 320]
+       image = image';
+   end
    
    imwrite(image, strcat('noisy_val_sigma01/', filename));
 end
@@ -20,6 +25,11 @@ for i=1:ntrain
    % add noise
    image = image + .1*randn(size(image));
    image = image(1:end-1, 1:end-1);
+   
+   % rotate image if it is tall
+   if size(image) == [480 320]
+       image = image';
+   end
    
    imwrite(image, strcat('noisy_train_sigma01/', filename));
 end
