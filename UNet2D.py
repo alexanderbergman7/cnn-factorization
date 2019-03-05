@@ -17,11 +17,10 @@ import os
 
 # hacky method since running in virtual environment on my machine or X11 forwarding to view images through SSH
 import matplotlib
-#matplotlib.use('TkAgg')
-#matplotlib.use('GTK')
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
-import psutil
+#import psutil
 import scipy.io as sio
 
 
@@ -86,22 +85,30 @@ class Dataset():
 	def validationLength(self):
 		return len(self.val)
 
-# Get 2D UNet model, single channel input, 16 features at top level, output single channel of denoised image
+	def validationFiles(self):
+		return self.val
+
+# hyperparameters
+EPOCHS = 25
+BatchSize = 40
+learning_rate = 0.01
+input_channels = 1
+output_channels = 1
+highest_level_features = 1
+depth = 2
+
+# Get 2D UNet model, single channel input, output single channel, features at top level of denoised image
 # params: input channels, output channels, number of top level features, down/up-samples, maximum features, use dropout
-UNet2D = pytorch_prototyping.Unet(1, 1, 1, 2, 512, False)
+UNet2D = pytorch_prototyping.Unet(input_channels, output_channels, highest_level_features, depth, 512, False)
 
 # Define loss function
 criterion = nn.MSELoss()
 
+# Create dataset representation
 d = Dataset('../dataset/images')
 
-
-print(d.getTrainItem(0))
-exit()
-
-optimizer = optim.SGD(UNet2D.parameters(), lr=0.01)
-EPOCHS = 20
-BatchSize = 40
+# iterate for epochs and batches and train using MSE loss function
+optimizer = optim.SGD(UNet2D.parameters(), lr=learning_rate)
 for i in range(0,EPOCHS):
 	for j in range(0, int(d.trainingLength()/BatchSize)):
 		batchY, batchX = d.getTrainingDataBatch(j*BatchSize, BatchSize)
@@ -110,31 +117,24 @@ for i in range(0,EPOCHS):
 		output = UNet2D(batchX)
 
 		loss = criterion(output, batchY)
-		print(loss)
 		loss.backward()
 		optimizer.step()
 
-valDataY, valDataX = d.getValidationDataBatch(0,1)
+	print("Epoch " + str(i+1))
 
+# Get validation data to test on
+valDataY, valDataX = d.getValidationDataBatch(0,100)
+
+# save model, get output for validation data
+torch.save(UNet2D, 'UNet2D_E25_BS40_ic1_oc1_f1_d2.pt')
 output = UNet2D(valDataX)
-#plt.imshow(trainingDataX[1,0,:,:].numpy())
-#plt.show()
-#plt.imshow(trainingDataY[1,0,:,:].numpy())
-#plt.show()
-#plt.imshow(output[1,0,:,:].detach().numpy())
-#plt.show()
+
+# write this data to be post-processed for MSE/PSNR values
+output = torch.squeeze(output)
+outputIm = output.detach().numpy()
+sio.savemat('outputIm.mat', {'outputIm': outputIm})
+val = d.validationFiles()
+sio.savemat('filenames.mat', {'filenames': val})
 
 #process = psutil.Process(os.getpid())
 #print(process.memory_info().rss)
-
-#f, axarr = plt.subplots(2,2)
-#axarr[0,0].imshow(valDataX[0,0,:,:].numpy())
-#axarr[0,1].imshow(valDataY[0,0,:,:].numpy())
-#axarr[1,0].imshow(output[0,0,:,:].detach().numpy())
-#plt.show()
-
-imageREC = torch.squeeze(output)
-imageRECNP = imageREC.detach().numpy()
-sio.savemat('irec.mat', {'x': imageRECNP})
-
-#print(criterion(output, valDataX))
