@@ -22,6 +22,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 import psutil
+import scipy.io as sio
 
 
 class Dataset():
@@ -47,27 +48,43 @@ class Dataset():
 
 		return image_original, image_noisy
 
-	def getTrainingData(self):
+	def getTrainingDataBatch(self, start, size):
 		images_orig = []
 		images_noisy = []
-		for i in range(0, len(self.train)):
+		for i in range(start, start+size):
 			image_original, image_noisy = self.getTrainItem(i)
 
 			images_orig.append(image_original)
 			images_noisy.append(image_noisy)
 
+		images_orig = torch.stack(images_orig, 0)
+		images_noisy = torch.stack(images_noisy, 0)
+		images_orig = torch.unsqueeze(images_orig, 1)
+		images_noisy = torch.unsqueeze(images_noisy, 1)
+
 		return images_orig, images_noisy
 
-	def getValidationData(self):
+	def getValidationDataBatch(self, start, size):
                 images_orig = []
                 images_noisy = []
-                for i in range(0, len(self.val)):
+                for i in range(start, start+size):
                         image_original, image_noisy = self.getValItem(i)
 
                         images_orig.append(image_original)
                         images_noisy.append(image_noisy)
 
+                images_orig = torch.stack(images_orig, 0)
+                images_noisy = torch.stack(images_noisy, 0)
+                images_orig = torch.unsqueeze(images_orig, 1)
+                images_noisy = torch.unsqueeze(images_noisy, 1)
+
                 return images_orig, images_noisy
+
+	def trainingLength(self):
+		return len(self.train)
+
+	def validationLength(self):
+		return len(self.val)
 
 # Get 2D UNet model, single channel input, 16 features at top level, output single channel of denoised image
 # params: input channels, output channels, number of top level features, down/up-samples, maximum features, use dropout
@@ -78,29 +95,26 @@ criterion = nn.MSELoss()
 
 d = Dataset('../dataset/images')
 
-trainingDataY, trainingDataX = d.getTrainingData()
 
-trainingDataX = torch.stack(trainingDataX, 0)
-trainingDataX = torch.unsqueeze(trainingDataX, 1)
-trainingDataY = torch.stack(trainingDataY, 0)
-trainingDataY = torch.unsqueeze(trainingDataY, 1)
+print(d.getTrainItem(0))
+exit()
 
 optimizer = optim.SGD(UNet2D.parameters(), lr=0.01)
 EPOCHS = 20
+BatchSize = 40
 for i in range(0,EPOCHS):
-	optimizer.zero_grad()
-	output = UNet2D(trainingDataX)
+	for j in range(0, int(d.trainingLength()/BatchSize)):
+		batchY, batchX = d.getTrainingDataBatch(j*BatchSize, BatchSize)
 
-	loss = criterion(output, trainingDataY)
-	print(loss)
-	loss.backward()
-	optimizer.step()
+		optimizer.zero_grad()
+		output = UNet2D(batchX)
 
-valDataY, valDataX = d.getValidationData()
-valDataX = torch.stack(valDataX, 0)
-valDataX = torch.unsqueeze(valDataX, 1)
-valDataY = torch.stack(valDataY, 0)
-valDataY = torch.unsqueeze(valDataY, 1)
+		loss = criterion(output, batchY)
+		print(loss)
+		loss.backward()
+		optimizer.step()
+
+valDataY, valDataX = d.getValidationDataBatch(0,1)
 
 output = UNet2D(valDataX)
 #plt.imshow(trainingDataX[1,0,:,:].numpy())
@@ -113,8 +127,14 @@ output = UNet2D(valDataX)
 #process = psutil.Process(os.getpid())
 #print(process.memory_info().rss)
 
-f, axarr = plt.subplots(2,2)
-axarr[0,0].imshow(valDataX[1,0,:,:].numpy())
-axarr[0,1].imshow(valDataY[1,0,:,:].numpy())
-axarr[1,0].imshow(output[1,0,:,:].detach().numpy())
-plt.show()
+#f, axarr = plt.subplots(2,2)
+#axarr[0,0].imshow(valDataX[0,0,:,:].numpy())
+#axarr[0,1].imshow(valDataY[0,0,:,:].numpy())
+#axarr[1,0].imshow(output[0,0,:,:].detach().numpy())
+#plt.show()
+
+imageREC = torch.squeeze(output)
+imageRECNP = imageREC.detach().numpy()
+sio.savemat('irec.mat', {'x': imageRECNP})
+
+#print(criterion(output, valDataX))
