@@ -126,14 +126,14 @@ def profile(model, input_size, custom_ops = {}):
 
 def main(args):
     model = torch.load(args.model)
-    total_ops, total_params = profile(model, args.input_size)
+    input_size = [320, 480] # hardcoded input size
+    total_ops, total_params = profile(model, input_size)
     print("#Ops: %f GOps"%(total_ops/1e9))
     print("#Parameters: %f M"%(total_params/1e6))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="pytorch model profiler")
     parser.add_argument("model", help="model to profile")
-    parser.add_argument("input_size", nargs='+', type=int,
-                        help="input size to the network")
+
     args = parser.parse_args()
     main(args)
