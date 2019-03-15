@@ -1,3 +1,5 @@
+# THIS CODE IS FROM https://github.com/vsitzmann/pytorch_prototyping FOR UNET WITH SANE DEFAULTS
+
 '''A number of custom pytorch modules with sane defaults that I find useful for model prototyping.'''
 import torch
 import torch.nn as nn
