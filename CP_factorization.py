@@ -12,7 +12,7 @@ import numbers
 import random
 
 # UNet models
-import pytorch_prototyping
+import separable_model_prototyping
 
 from skimage import io
 import os
@@ -25,12 +25,10 @@ import matplotlib.pyplot as plt
 #import psutil
 import scipy.io as sio
 
-USE_GPU = True
-USE_CROP = True
+import tensorly.decomposition as d
 
-if USE_GPU:
-	print(torch.cuda.is_available())
-	torch.cuda.set_device(0)
+USE_GPU = True
+USE_CROP = False
 
 class Dataset():
 
@@ -114,55 +112,83 @@ class Dataset():
 	def validationFiles(self):
 		return self.val
 
-# hyperparameters
-EPOCHS = 550
-BatchSize = 40
-learning_rate = 0.01
-input_channels = 1
-output_channels = 1
-highest_level_features = 6
-depth = 5
-
 # Get 2D UNet model, single channel input, output single channel, features at top level of denoised image
 # params: input channels, output channels, number of top level features, down/up-samples, maximum features, use dropout
-UNet2D = pytorch_prototyping.Unet(input_channels, output_channels, highest_level_features, depth, 512, False)
+UNet2D = torch.load('final_model_UNet.pt')
 if USE_GPU:
 	UNet2D = UNet2D.cuda()
 
-# Define loss function
-criterion = nn.MSELoss()
+modules = {}
+for name, layer in UNet2D.named_modules():
+	if isinstance(layer, nn.Conv2d):
+		last, first, vertical, horizontal = d.parafac(layer.weight.data.cpu().numpy(), rank=6, init='svd')
+
+		pointwise_s_to_r_layer = torch.nn.Conv2d(in_channels=first.shape[0], \
+	            out_channels=first.shape[1], kernel_size=1, stride=1, padding=0, 
+	            dilation=layer.dilation, bias=False)
+
+		depthwise_vertical_layer = torch.nn.Conv2d(in_channels=vertical.shape[1], 
+	            out_channels=vertical.shape[1], kernel_size=(vertical.shape[0], 1),
+	            stride=1, padding=(layer.padding[0], 0), dilation=layer.dilation,
+	            groups=vertical.shape[1], bias=False)
+
+		depthwise_horizontal_layer = \
+	        torch.nn.Conv2d(in_channels=horizontal.shape[1], \
+	            out_channels=horizontal.shape[1], 
+	            kernel_size=(1, horizontal.shape[0]), stride=layer.stride,
+	            padding=(0, layer.padding[0]), 
+	            dilation=layer.dilation, groups=horizontal.shape[1], bias=False)
+
+		pointwise_r_to_t_layer = torch.nn.Conv2d(in_channels=last.shape[1], \
+	            out_channels=last.shape[0], kernel_size=1, stride=1,
+	            padding=0, dilation=layer.dilation, bias=True)
+
+		horizontal = torch.from_numpy(horizontal).type('torch.FloatTensor').cuda()
+		vertical = torch.from_numpy(vertical).type('torch.FloatTensor').cuda()
+		first = torch.from_numpy(first).type('torch.FloatTensor').cuda()
+		last = torch.from_numpy(last).type('torch.FloatTensor').cuda()
+
+		depthwise_horizontal_layer.weight.data = \
+	        torch.transpose(horizontal, 1, 0).unsqueeze(1).unsqueeze(1)
+		depthwise_vertical_layer.weight.data = \
+	        torch.transpose(vertical, 1, 0).unsqueeze(1).unsqueeze(-1)
+		pointwise_s_to_r_layer.weight.data = \
+	        torch.transpose(first, 1, 0).unsqueeze(-1).unsqueeze(-1)
+		pointwise_r_to_t_layer.weight.data = last.unsqueeze(-1).unsqueeze(-1)
+
+		new_layers = [pointwise_s_to_r_layer, depthwise_vertical_layer, \
+	                    depthwise_horizontal_layer, pointwise_r_to_t_layer]
+	    
+		modules[name] = nn.Sequential(*new_layers)
+
+for name in modules:
+    parent_module = UNet2D
+    objs = name.split(".")
+    if len(objs) == 1:
+        UNet2D.__setattr__(name, modules[name])
+        continue
+
+    for obj in objs[:-1]:
+        parent_module = parent_module.__getattr__(obj)
+
+    parent_module.__setattr__(objs[-1], modules[name])
+
+UNet2D = UNet2D.cuda()
 
 # Create dataset representation
 d = Dataset('../dataset/images')
 
-# iterate for epochs and batches and train using MSE loss function
-optimizer = optim.SGD(UNet2D.parameters(), lr=learning_rate)
-for i in range(0,EPOCHS):
-	for j in range(0, int(d.trainingLength()/BatchSize)):
-		batchY, batchX = d.getTrainingDataBatch(j*BatchSize, BatchSize)
-
-		if USE_GPU:
-			batchY = batchY.cuda()
-			batchX = batchX.cuda()
-
-		optimizer.zero_grad()
-		output = UNet2D(batchX)
-
-		loss = criterion(output, batchY)
-		loss.backward()
-		optimizer.step()
-
-	print("Epoch " + str(i+1))
-
 # Get validation data to test on
-valDataY, valDataX = d.getValidationDataBatch(0,100)
+valDataY, valDataX = d.getValidationDataBatch(0,50)
 if USE_GPU:
 	valDataY = valDataY.cuda()
 	valDataX = valDataX.cuda()
 
 # save model, get output for validation data
-torch.save(UNet2D, 'test_model_comp.pt')
+torch.save(UNet2D, 'test_model_CP_rT.pt')
+
 output = UNet2D(valDataX)
+print(output.size())
 
 # write this data to be post-processed for MSE/PSNR values
 output = torch.squeeze(output)
@@ -170,9 +196,9 @@ if USE_GPU:
 	output = output.cpu()
 
 outputIm = output.detach().numpy()
-sio.savemat('outputIm.mat', {'outputIm': outputIm})
+sio.savemat('outputIm_CPr6.mat', {'outputIm': outputIm})
 val = d.validationFiles()
-sio.savemat('filenames.mat', {'filenames': val})
+sio.savemat('filenames_CPr1.mat', {'filenames': val})
 
 #process = psutil.Process(os.getpid())
 #print(process.memory_info().rss)
