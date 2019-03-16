@@ -1,6 +1,6 @@
 # cnn-factorization
 
-This repository contains the code that was used to generate the results described in the EE367 final report, Factorized Convolution Kernels in Image Processing. This README describes the usage of the files, an a sample pipeline that can be run in order to use a model for denoising and profile a model.
+This repository contains the code that was used to generate the results described in the EE367 final report, Factorized Convolution Kernels in Image Processing. This README describes the usage of the files, and some sample commands that can be run in order to use a model for denoising and profile a model and train a model.
 
 ## TO RUN THE EXAMPLE CODE: <br/>
 To run the profiling method on a pre-existing model, first set the size of input to be evaluated. The default values in constants.py are BatchSize=40, IMAGE_SIZE = [320, 480], corresponding to an input to the model of dimensions [BatchSize, 1, IMAGE_SIZE]. Then, run the profiling command: 
@@ -22,13 +22,12 @@ Set the hyperparameters for training in constants.py, and alter the name of the 
 - python UNet2D.py
 - python UNet2D_separable.py
 - python CP_factorization.py <br/>
-Note that all of these files assume that the BSD has been downloaded and placed in a directory called "dataset" on the same level as this repository, and the pre-processing scripts have been run.
 
 
 ## DESCRIPTION OF FILES: <br/>
 ### In the scripts/ directory: <br/>
 #### addNoise.m: <br/>
-generates a noisy dataset from the Berkeley Segmentation Dataset, where the BSD is in a directory on the same level as this repository. <br/>
+generates a noisy dataset from the Berkeley Segmentation Dataset
 #### BM3D_denoising.m: <br/>
 denoises the noisy images generated into a directory in the dataset using the BM3D algorithm described at http://www.cs.tut.fi/~foi/GCF-BM3D/. This directory must be downloaded and in the MATLAB path so that the BM3D function can be used. <br/>
 #### processOutput.m: <br/>
