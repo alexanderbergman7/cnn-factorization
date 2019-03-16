@@ -2,6 +2,8 @@
 
 This repository contains the code that was used to generate the results described in the EE367 final report, Factorized Convolution Kernels in Image Processing. This README describes the usage of the files, and some sample commands that can be run in order to use a model for denoising and profile a model and train a model.
 
+Note: THE CODE IN THE REPO REQUIRES PYTHON 3
+
 ## TO RUN THE EXAMPLE CODE: <br/>
 To run the profiling method on a pre-existing model, first set the size of input to be evaluated. The default values in constants.py are BatchSize=40, IMAGE_SIZE = [320, 480], corresponding to an input to the model of dimensions [BatchSize, 1, IMAGE_SIZE]. Then, run the profiling command: 
 - python profile.py models/"model name" <br/>
