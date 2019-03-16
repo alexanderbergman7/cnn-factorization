@@ -10,3 +10,4 @@ output_channels = 1
 highest_level_features = 1
 depth = 1
 rank = 1
+MODEL_TO_EVALUATE = 'models/UNet_model.pt'
