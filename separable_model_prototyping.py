@@ -1,3 +1,5 @@
+# Modification of https://github.com/vsitzmann/pytorch_prototyping to replace convolutions with depthwise separable convolutions
+
 '''A number of custom pytorch modules based on separable convolutions with sane defaults for prototyping. 
 Code is based on pytorch_prototyping by vsitzmann.'''
 import torch
@@ -12,20 +14,28 @@ import numbers
 
 
 class DownBlock3D(nn.Module):
-    '''A 3D convolutional downsampling block.
+    '''A 3D convolutional downsampling block. Implemented with depthwise separable convolutions.
     '''
 
     def __init__(self, in_channels, out_channels, norm=nn.BatchNorm3d):
         super().__init__()
 
+        # add a depthwise separable convolution in the downsampling 3D layer
         self.net = [
             nn.ReplicationPad3d(1),
             nn.Conv3d(in_channels,
-                      out_channels,
-                      kernel_size=4,
-                      padding=0,
-                      stride=2,
-                      bias=False if norm is not None else True),
+                          in_channels,
+                          kernel_size=4,
+                          padding=0,
+                          stride=2,
+                          groups=in_channels,
+                          bias=False if norm is None else True),
+                nn.Conv3d(in_channels,
+                          out_channels,
+                          kernel_size=1,
+                          padding=0,
+                          stride=1,
+                          bias=False if norm is None else True)
         ]
 
         if norm is not None:
@@ -39,19 +49,24 @@ class DownBlock3D(nn.Module):
 
 
 class UpBlock3D(nn.Module):
-    '''A 3D convolutional upsampling block.
+    '''A 3D convolutional upsampling block. Implemented with depthwise separable convolutions.
     '''
 
     def __init__(self, in_channels, out_channels, norm=nn.BatchNorm3d):
         super().__init__()
 
-        self.net = [
-            nn.ConvTranspose3d(in_channels,
-                               out_channels,
-                               kernel_size=4,
-                               stride=2,
-                               padding=1,
-                               bias=False if norm is not None else True),
+        # since convolution transpose is a form of a convolution which upsamples, we replace it with a depthwise
+        # separable convolution
+        self.net = [nn.ConvTranspose3d(in_channels,
+                                       in_channels,
+                                       kernel_size=4,
+                                       stride=2,
+                                       padding=1,
+                                       groups=in_channels,
+                                       bias=False if norm is None else True),
+                    nn.ConvTranspose3d(in_channels,
+                                       out_channels,
+                                       kernel_size=1)
         ]
 
         if norm is not None:
@@ -71,6 +86,7 @@ class UpBlock3D(nn.Module):
 class Conv3dSame(torch.nn.Module):
     '''3D convolution that pads to keep spatial dimensions equal. 
     Cannot deal with stride. Only quadratic kernels (=scalar kernel_size).
+    Implemented with a depthwise separable convolution.
     '''
 
     def __init__(self, in_channels, out_channels, kernel_size, bias=True, padding_layer=nn.ReplicationPad3d):
@@ -86,7 +102,10 @@ class Conv3dSame(torch.nn.Module):
         kb = ka - 1 if kernel_size % 2 == 0 else ka
         self.net = nn.Sequential(
             padding_layer((ka, kb, ka, kb, ka, kb)),
-            nn.Conv3d(in_channels, out_channels, kernel_size, bias=bias, stride=1)
+            # depthwise convolution by grouped convolution
+            nn.Conv3d(in_channels, in_channels, kernel_size, bias=bias, stride=1, groups=in_channels),
+            # 1x1 pointwise convolution
+            nn.Conv3d(in_channels, out_channels, 1)
         )
 
     def forward(self, x):
@@ -96,7 +115,8 @@ class Conv3dSame(torch.nn.Module):
 class Conv2dSame(torch.nn.Module):
     '''2D convolution that pads to keep spatial dimensions equal. 
     Cannot deal with stride. Only quadratic kernels (=scalar kernel_size).
-    2D convolution is represented by a depthwise convolution followed by a 1x1 pointwise convolution
+    2D convolution is represented by a depthwise convolution followed by a 1x1 pointwise convolution,
+     i.e. a depthwise separable convolution
     '''
 
     def __init__(self, in_channels, out_channels, kernel_size, bias=True, padding_layer=nn.ReflectionPad2d):
@@ -108,13 +128,13 @@ class Conv2dSame(torch.nn.Module):
         :param padding_layer: Which padding to use. Default is reflection padding.
         '''
 
-        # consider whether or not to add batchnorm and ReLU in between depthwise and pointwise convolutions
+        # replace standard convolution with depthwise and pointwise convolution
         super().__init__()
         ka = kernel_size // 2
         kb = ka - 1 if kernel_size % 2 == 0 else ka
         self.net = nn.Sequential(
             padding_layer((ka, kb, ka, kb)),
-            # depthwise convolution by changing amount of groups - double check the use of bias here and in original UNet
+            # depthwise convolution by changing amount of groups
             nn.Conv2d(in_channels, in_channels, kernel_size, bias=bias, stride=1, groups=in_channels),
             # 1x1 convolution of input channels to output channels
             nn.Conv2d(in_channels, out_channels, 1)
@@ -129,7 +149,7 @@ class Conv2dSame(torch.nn.Module):
 
 class UpBlock(nn.Module):
     '''A 2d-conv upsampling block with a variety of options for upsampling, and following best practices / with
-    reasonable defaults. (LeakyReLU, kernel size multiple of stride)
+    reasonable defaults. (LeakyReLU, kernel size multiple of stride). Implemented with a depthwise separable convolution.
     '''
 
     def __init__(self,
@@ -195,6 +215,7 @@ class UpBlock(nn.Module):
         if use_dropout:
             net += [nn.Dropout2d(dropout_prob, False)]
 
+        # calls conv2dsame method which is implemented with a depthwise separable convolution
         if post_conv:
             net += [Conv2dSame(out_channels,
                                out_channels,
@@ -251,6 +272,7 @@ class DownBlock(nn.Module):
         net = list()
 
         if prep_conv:
+            # break standard convolution into depthwise separable convolution
             net += [nn.ReflectionPad2d(1),
                     nn.Conv2d(in_channels,
                               in_channels,
@@ -274,6 +296,7 @@ class DownBlock(nn.Module):
             if use_dropout:
                 net += [nn.Dropout2d(dropout_prob, False)]
 
+        # add in downsampling convolution which is also depthwise separable
         net += [nn.ReflectionPad2d(1),
                 nn.Conv2d(middle_channels,
                           middle_channels,
