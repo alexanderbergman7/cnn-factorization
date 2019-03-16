@@ -25,20 +25,27 @@ import matplotlib.pyplot as plt
 #import psutil
 import scipy.io as sio
 
-USE_GPU = True
-USE_CROP = False
+import constants
+
+USE_GPU = constants.USE_GPU
+USE_CROP = constants.USE_CROP
+CROP_SIZE = constants.CROP_SIZE
+IMAGE_SIZE = constants.IMAGE_SIZE
 
 if USE_GPU:
 	print(torch.cuda.is_available())
 	torch.cuda.set_device(0)
 
+# class used for interfacing the dataset
 class Dataset():
 
+	# initialize the dataset based on the directory that images will be contained in
 	def __init__(self, root_dir):
 		self.root_dir = root_dir
 		self.train = os.listdir(os.path.join(root_dir, 'train_gray'))
 		self.val = os.listdir(os.path.join(root_dir, 'val_gray'))
 
+	# get a training pair in tensor form
 	def getTrainItem(self, idx):
 		image_original = torch.from_numpy(io.imread(os.path.join(self.root_dir, 'train_gray', self.train[idx])))
 		image_noisy = torch.from_numpy(io.imread(os.path.join(self.root_dir, 'noisy_train_sigma01', self.train[idx])))
@@ -47,6 +54,7 @@ class Dataset():
 
 		return image_original, image_noisy
 
+	# get a validation/testing pair in tensor form
 	def getValItem(self, idx):
 		image_original = torch.from_numpy(io.imread(os.path.join(self.root_dir, 'val_gray', self.val[idx])))
 		image_noisy = torch.from_numpy(io.imread(os.path.join(self.root_dir, 'noisy_val_sigma01', self.val[idx])))
@@ -55,6 +63,7 @@ class Dataset():
 
 		return image_original, image_noisy
 
+	# get a batch of training data, either cropped or not
 	def getTrainingDataBatch(self, start, size):
 		images_orig = []
 		images_noisy = []
@@ -62,7 +71,7 @@ class Dataset():
 			image_original, image_noisy = self.getTrainItem(i)
 
 			if USE_CROP:
-				image_original, image_noisy = self.transformCrop(image_original, image_noisy, 32, 32)
+				image_original, image_noisy = self.transformCrop(image_original, image_noisy, CROP_SIZE[0], CROP_SIZE[1])
 
 			images_orig.append(image_original)
 			images_noisy.append(image_noisy)
@@ -74,9 +83,10 @@ class Dataset():
 
 		return images_orig, images_noisy
 
+	# crop two tensor images
 	def transformCrop(self, image_original, image_noisy, th, tw):
-		cols = 480
-		rows = 320
+		cols = IMAGE_SIZE[1]
+		rows = IMAGE_SIZE[0]
 		if cols == tw and rows == th:
 			i = 0
 			j = 0
@@ -89,6 +99,7 @@ class Dataset():
 
 		return image_original, image_noisy
 
+	# get a batch of validation data
 	def getValidationDataBatch(self, start, size):
                 images_orig = []
                 images_noisy = []
@@ -105,23 +116,26 @@ class Dataset():
 
                 return images_orig, images_noisy
 
+    # get the length of the training data
 	def trainingLength(self):
 		return len(self.train)
 
+	# get the length of the validation data
 	def validationLength(self):
 		return len(self.val)
 
+	# get validation filenames
 	def validationFiles(self):
 		return self.val
 
 # hyperparameters
-EPOCHS = 180
-BatchSize = 40
-learning_rate = 0.01
-input_channels = 1
-output_channels = 1
-highest_level_features = 6
-depth = 5
+EPOCHS = constants.EPOCHS
+BatchSize = constants.BatchSize
+learning_rate = constants.learning_rate
+input_channels = constants.input_channels
+output_channels = constants.output_channels
+highest_level_features = constants.highest_level_features
+depth = constants.depth
 
 # Get 2D UNet model, single channel input, output single channel, features at top level of denoised image
 # params: input channels, output channels, number of top level features, down/up-samples, maximum features, use dropout
@@ -161,8 +175,7 @@ if USE_GPU:
 	valDataX = valDataX.cuda()
 
 # save model, get output for validation data
-torch.save(UNet2D, 'test_model_separable.pt')
-
+torch.save(UNet2D, 'dw_separable_model.pt')
 output = UNet2D(valDataX)
 
 # write this data to be post-processed for MSE/PSNR values
@@ -170,10 +183,8 @@ output = torch.squeeze(output)
 if USE_GPU:
 	output = output.cpu()
 
+# save output images and filenames
 outputIm = output.detach().numpy()
 sio.savemat('outputIm_separable.mat', {'outputIm': outputIm})
 val = d.validationFiles()
 sio.savemat('filenames_separable.mat', {'filenames': val})
-
-#process = psutil.Process(os.getpid())
-#print(process.memory_info().rss)
