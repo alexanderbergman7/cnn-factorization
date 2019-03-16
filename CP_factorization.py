@@ -131,11 +131,11 @@ class Dataset():
 		return self.val
 
 # Load 2D UNet model which has already been trained
-UNet2D = torch.load('model.pt')
 if USE_GPU:
+	UNet2D = torch.load('model.pt')
 	UNet2D = UNet2D.cuda()
 else:
-	UNet2D = UNet2D.cpu()
+	UNet2D = torch.load('model.pt', map_location='cpu')
 
 # keep dictionary of modules to replace
 modules = {}
