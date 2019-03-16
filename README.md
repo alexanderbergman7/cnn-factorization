@@ -22,13 +22,12 @@ Set the hyperparameters for training in constants.py, and alter the name of the 
 - python UNet2D.py
 - python UNet2D_separable.py
 - python CP_factorization.py <br/>
-Note that all of these files assume that the BSD has been downloaded and placed in a directory called "dataset" on the same level as this repository, and the pre-processing scripts have been run.
 
 
 ## DESCRIPTION OF FILES: <br/>
 ### In the scripts/ directory: <br/>
 #### addNoise.m: <br/>
-generates a noisy dataset from the Berkeley Segmentation Dataset, where the BSD is in a directory on the same level as this repository. <br/>
+generates a noisy dataset from the Berkeley Segmentation Dataset
 #### BM3D_denoising.m: <br/>
 denoises the noisy images generated into a directory in the dataset using the BM3D algorithm described at http://www.cs.tut.fi/~foi/GCF-BM3D/. This directory must be downloaded and in the MATLAB path so that the BM3D function can be used. <br/>
 #### processOutput.m: <br/>
