@@ -1,53 +1,69 @@
+# code based on https://github.com/e-lab/pytorch-toolbox/blob/master/profiler/profile.py
 import argparse
 
 import torch
 import torch.nn as nn
 
+import constants
+
+USE_GPU = constants.USE_GPU
+
+# count operations for 2D convolution
 def count_conv2d(m, x, y):
     x = x[0]
 
+    # input and output channels
     cin = m.in_channels // m.groups
     cout = m.out_channels // m.groups
+    # size of kernel
     kh, kw = m.kernel_size
+    # size of batch
     batch_size = x.size()[0]
 
-    # ops per output element
+    # ops per output element, depends on input channels and kernel size
     kernel_mul = kh * kw * cin
     kernel_add = kh * kw * cin - 1
     bias_ops = 1 if m.bias is not None else 0
     ops = kernel_mul + kernel_add + bias_ops
 
-    # total ops
+    # total ops as a function of elements
     num_out_elements = y.numel()
     total_ops = num_out_elements * ops
 
     # incase same conv is used multiple times
     m.total_ops += torch.Tensor([int(total_ops)])
 
+# count operations for 2D convolution transpose, which is the same as a convolution
 def count_convtranspose2d(m, x, y):
     x = x[0]
 
+    # input and output channels
     cin = m.in_channels // m.groups
     cout = m.out_channels // m.groups
+    # size of kernel
     kh, kw = m.kernel_size
+    # size of batch
     batch_size = x.size()[0]
 
-    # ops per output element
+    # ops per output element, depends on input channels and kernel size
     kernel_mul = kh * kw * cin
     kernel_add = kh * kw * cin - 1
     bias_ops = 1 if m.bias is not None else 0
     ops = kernel_mul + kernel_add + bias_ops
 
-    # total ops
+    # total ops as a function of elements
     num_out_elements = y.numel()
     total_ops = num_out_elements * ops
 
     # incase same conv is used multiple times
     m.total_ops += torch.Tensor([int(total_ops)])
 
+# count batch normalization operations
 def count_bn2d(m, x, y):
     x = x[0]
 
+    # have to normalize by mean, all elements must be subtracted to range and then divided to standardize
+    # the deviation
     nelements = x.numel()
     total_sub = nelements
     total_div = nelements
@@ -55,53 +71,9 @@ def count_bn2d(m, x, y):
 
     m.total_ops += torch.Tensor([int(total_ops)])
 
-def count_relu(m, x, y):
-    x = x[0]
-
-    nelements = x.numel()
-    total_ops = nelements
-
-    m.total_ops += torch.Tensor([int(total_ops)])
-
-def count_softmax(m, x, y):
-    x = x[0]
-
-    batch_size, nfeatures = x.size()
-
-    total_exp = nfeatures
-    total_add = nfeatures - 1
-    total_div = nfeatures
-    total_ops = batch_size * (total_exp + total_add + total_div)
-
-    m.total_ops += torch.Tensor([int(total_ops)])
-
-def count_maxpool(m, x, y):
-    kernel_ops = torch.prod(torch.Tensor([m.kernel_size])) - 1
-    num_elements = y.numel()
-    total_ops = kernel_ops * num_elements
-
-    m.total_ops += torch.Tensor([int(total_ops)])
-
-def count_avgpool(m, x, y):
-    total_add = torch.prod(torch.Tensor([m.kernel_size])) - 1
-    total_div = 1
-    kernel_ops = total_add + total_div
-    num_elements = y.numel()
-    total_ops = kernel_ops * num_elements
-
-    m.total_ops += torch.Tensor([int(total_ops)])
-
-def count_linear(m, x, y):
-    # per output element
-    total_mul = m.in_features
-    total_add = m.in_features - 1
-    num_elements = y.numel()
-    total_ops = (total_mul + total_add) * num_elements
-
-    m.total_ops += torch.Tensor([int(total_ops)])
-
 def profile(model, input_size, custom_ops = {}):
 
+    # take in model
     model.eval()
 
     def add_hooks(m):
@@ -118,24 +90,20 @@ def profile(model, input_size, custom_ops = {}):
             m.register_forward_hook(count_convtranspose2d)
         elif isinstance(m, nn.BatchNorm2d):
             m.register_forward_hook(count_bn2d)
-        elif isinstance(m, nn.ReLU):
-            m.register_forward_hook(count_relu)
-        elif isinstance(m, (nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d)):
-            m.register_forward_hook(count_maxpool)
-        elif isinstance(m, (nn.AvgPool1d, nn.AvgPool2d, nn.AvgPool3d)):
-            m.register_forward_hook(count_avgpool)
-        elif isinstance(m, nn.Linear):
-            m.register_forward_hook(count_linear)
-        elif isinstance(m, (nn.Dropout, nn.Dropout2d, nn.Dropout3d)):
-            pass
         else:
             print("Not implemented for ", m)
 
     model.apply(add_hooks)
 
-    x = torch.zeros(input_size).cuda()
+    # input of size that we want to profile
+    x = torch.zeros(input_size)
+    if USE_GPU:
+        model = model.cuda()
+        x = x.cuda()
+
     model(x)
 
+    # take operations and parameters from the model by looping through the modules
     total_ops = 0
     total_params = 0
     for m in model.modules():
@@ -145,11 +113,15 @@ def profile(model, input_size, custom_ops = {}):
     total_ops = total_ops
     total_params = total_params
 
+    # return operations and parameters
     return total_ops, total_params
 
 def main(args):
-    model = torch.load(args.model)
-    input_size = [40, 1, 320, 480] # hardcoded input size
+    if USE_GPU:
+        model = torch.load(args.model).cuda()
+    else:
+        model = torch.load(args.model, map_location='cpu')
+    input_size = [constants.BatchSize, 1, constants.IMAGE_SIZE[0], constants.IMAGE_SIZE[1]] # hardcoded input size
     total_ops, total_params = profile(model, input_size)
     print("#Ops: %f GOps"%(total_ops/1e9))
     print("#Parameters: %f M"%(total_params/1e6))
