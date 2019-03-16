@@ -118,7 +118,7 @@ def profile(model, input_size, custom_ops = {}):
 
 def main(args):
     if USE_GPU:
-        model = torch.load(args.model).cuda()
+        model = torch.load(args.model)
     else:
         model = torch.load(args.model, map_location='cpu')
     input_size = [constants.BatchSize, 1, constants.IMAGE_SIZE[0], constants.IMAGE_SIZE[1]] # hardcoded input size
