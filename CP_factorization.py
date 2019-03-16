@@ -132,10 +132,10 @@ class Dataset():
 
 # Load 2D UNet model which has already been trained
 if USE_GPU:
-	UNet2D = torch.load('model.pt')
+	UNet2D = torch.load('models/UNet_model.pt')
 	UNet2D = UNet2D.cuda()
 else:
-	UNet2D = torch.load('model.pt', map_location='cpu')
+	UNet2D = torch.load('models/UNet_model.pt', map_location='cpu')
 
 # keep dictionary of modules to replace
 modules = {}
@@ -170,7 +170,7 @@ for name, layer in UNet2D.named_modules():
 	    # iplement pointwise layer as conv2d with 1x1 kernel also
 		pointwise_r_to_t_layer = torch.nn.Conv2d(in_channels=last.shape[1], \
 	            out_channels=last.shape[0], kernel_size=1, stride=1,
-	            padding=0, dilation=layer.dilation, bias=layer.bias)
+	            padding=0, dilation=layer.dilation, bias=False)
 
 		# convert if using GPU
 		if USE_GPU:
